@@ -29,6 +29,7 @@ override_dh_auto_test:
 # off the specific check (none of the go vet flags seem to work), we just disable
 # go vet for these legacy versions.
 vet:
+	go env -w GO111MODULE=off
 	if [ `go version | cut -d' ' -f3 | cut -c3- | cut -d. -f2` -le "10" ]; then \
 		echo "Disable go vet for go1.10 and earlier"; \
 	else \
