@@ -11,8 +11,8 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
-	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -198,23 +198,45 @@ func (a *Auth) LogReqFn(uid uint32, fn string, result bool) {
 	}
 }
 
+// LoadAdb returns nil for a file it cannot use. The rules are on unless the file
+// says "enabled": false, and a default it does not set allows nothing.
 func LoadAdb(filename string, logger *log.Logger) *Authdb {
-	var adb Authdb
+	adb := Authdb{Enabled: true}
 
-	f, e := os.Open(filename)
+	data, e := ioutil.ReadFile(filename)
 	if e != nil {
 		logger.Println(e)
 		return nil
 	}
 
-	dec := json.NewDecoder(f)
-	e = dec.Decode(&adb)
+	// All of the file must parse: a decoder would stop after its first value.
+	e = json.Unmarshal(data, &adb)
 	if e != nil {
 		logger.Println(e)
 		return nil
+	}
+
+	for _, rules := range [][]*AuthRuleType{adb.Rules, adb.RpcRules} {
+		for _, rulet := range rules {
+			if rulet == nil || rulet.Rule == nil {
+				logger.Printf("%s: a rule with no body", filename)
+				return nil
+			}
+		}
 	}
 
 	return &adb
+}
+
+// loadRuleset is what a host starts with: the rules in filename, or, when those
+// are missing or malformed, none, so that only the exempt uid gets through.
+func loadRuleset(filename string, logger *log.Logger) *Authdb {
+	adb := LoadAdb(filename, logger)
+	if adb == nil {
+		logger.Printf("No usable ruleset in %s: denying all but the exempt uid", filename)
+		adb = &Authdb{Enabled: true}
+	}
+	return adb
 }
 
 func (a *Auth) contains(list []string, item string) bool {
@@ -303,10 +325,7 @@ func NewAuthGlobal(username string, dlog, elog *log.Logger) *AuthGlobal {
 		Elog:    elog,
 		auditer: audit.NewAudit(),
 	}
-	adb := LoadAdb(Authrulefile, elog)
-	if adb == nil {
-		adb = &Authdb{}
-	}
+	adb := loadRuleset(Authrulefile, elog)
 	aaaif, err := aaa.LoadAAA()
 	if err != nil {
 		elog.Printf("Could not load AAA subsystem: %s", err)

@@ -198,10 +198,11 @@ func newAuthForTest() *Auth {
 		panic("Could not instantiate AuthGlobal")
 	}
 
-	// Swap in test auditer and enable logging
+	// Swap in test auditer and enable logging. A test's own auther decides,
+	// so the host's ruleset has no say, nor does its lack of one.
 	a.auditer = audit.NewTestAudit()
 	adb, _ := a.load()
-	adb.LogReq = true
+	a.store(&Authdb{Uid: adb.Uid, LogReq: true})
 
 	return NewAuth(a)
 }
